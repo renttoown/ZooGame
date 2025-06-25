@@ -93,7 +93,7 @@
         let watchId = null; // To store the ID of the geolocation watcher
         const TARGET_RADIUS_METERS = 50; // How close player needs to be to trigger puzzle (adjust as needed)
 
-        // --- NEW: Fake Location Configuration ---
+        // --- Fake Location Configuration ---
         const useFakeLocation = true; // Set to true to use fake coordinates, false to use real GPS
         let fakeCoords = { latitude: 51.0450, longitude: -114.0585 }; // Default fake location (Penguin Plunge)
         // You can change fakeCoords dynamically in your browser's console for testing:
@@ -250,15 +250,20 @@
                 const distance = calculateDistance({ latitude, longitude }, targetCoords);
                 distanceSpan.textContent = distance.toFixed(2);
 
-                if (distance <= TARGET_RADIUS_METERS && puzzleSection.classList.contains('hidden')) {
-                    // Player is at the location, reveal the puzzle
-                    puzzleSection.classList.remove('hidden');
-                    puzzleQuestion.textContent = puzzles[currentStage].puzzle;
-                    displayMessage(`You've reached "${puzzles[currentStage].name}"! Time to solve the puzzle.`, 'success');
-                } else if (distance > TARGET_RADIUS_METERS && !puzzleSection.classList.contains('hidden')) {
-                    // Player moved away from the location, hide puzzle
-                    puzzleSection.classList.add('hidden');
-                    displayMessage("You moved away from the location. Get back to the target area to see the puzzle!", 'error');
+                // Logic to show/hide puzzle based on proximity
+                if (distance <= TARGET_RADIUS_METERS) {
+                    // Player is at the location, reveal the puzzle if it's hidden
+                    if (puzzleSection.classList.contains('hidden')) {
+                        puzzleSection.classList.remove('hidden');
+                        puzzleQuestion.textContent = puzzles[currentStage].puzzle;
+                        displayMessage(`You've reached "${puzzles[currentStage].name}"! Time to solve the puzzle.`, 'success');
+                    }
+                } else {
+                    // Player is not at the location, hide the puzzle if it's visible
+                    if (!puzzleSection.classList.contains('hidden')) {
+                        puzzleSection.classList.add('hidden');
+                        displayMessage("You moved away from the location. Get back to the target area to see the puzzle!", 'error');
+                    }
                 }
             }
         }
@@ -345,11 +350,14 @@
                 if (useFakeLocation && currentStage < puzzles.length) {
                     fakeCoords = puzzles[currentStage].coords;
                     // Trigger a simulated location update to show the new distance/puzzle
-                    const fakePosition = {
-                        coords: fakeCoords,
-                        timestamp: Date.now()
-                    };
-                    handleGeolocationSuccess(fakePosition);
+                    // Added a small delay to ensure DOM update (hiding puzzle) from updateGameDisplay() is processed
+                    setTimeout(() => {
+                        const fakePosition = {
+                            coords: fakeCoords,
+                            timestamp: Date.now()
+                        };
+                        handleGeolocationSuccess(fakePosition);
+                    }, 50); // 50ms delay
                 }
                 
                 updateGameDisplay(); // Update display with new clue or game end message
