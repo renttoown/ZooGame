@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calgary Zoo Escape Game</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .game-container {
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .button-primary {
+            @apply bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out;
+        }
+        .button-secondary {
+            @apply bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out;
+        }
+        input[type="text"] {
+            @apply p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full;
+        }
+        .message-box {
+            @apply bg-blue-100 border border-blue-400 text-blue-800 px-4 py-3 rounded relative;
+        }
+        .error-message {
+            @apply bg-red-100 border border-red-400 text-red-800 px-4 py-3 rounded relative;
+        }
+        .success-message {
+            @apply bg-green-100 border border-green-400 text-green-800 px-4 py-3 rounded relative;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container" class="game-container">
+        <h1 class="text-4xl font-bold text-gray-800 mb-4">Calgary Zoo Escape!</h1>
+        <p id="introduction-text" class="text-lg text-gray-600 mb-6">
+            Welcome, adventurer! The zoo gates are locked, and you have to solve a series of puzzles hidden around the Calgary Zoo to find the key and escape!
+            Grant location access to begin your journey.
+        </p>
+
+        <div id="game-display" class="hidden">
+            <div id="current-clue" class="message-box mb-4 text-left">
+                <p class="font-semibold text-xl mb-2">Current Clue:</p>
+                <p id="clue-text" class="text-lg"></p>
+                <p id="location-hint" class="mt-2 text-sm italic text-blue-700"></p>
+            </div>
+
+            <div id="user-location-info" class="text-sm text-gray-500 mb-4">
+                <p>Your Location: <span id="latitude">N/A</span>, <span id="longitude">N/A</span></p>
+                <p>Distance to Target: <span id="distance">N/A</span> meters</p>
+            </div>
+
+            <div id="puzzle-section" class="hidden">
+                <p class="text-xl font-semibold mb-3 text-gray-700">Solve the Puzzle!</p>
+                <p id="puzzle-question" class="text-lg mb-4"></p>
+                <input type="text" id="answer-input" placeholder="Enter your answer here" class="mb-4">
+                <button id="submit-answer-btn" class="button-primary w-full">Submit Answer</button>
+            </div>
+
+            <div id="game-messages" class="mt-4"></div>
+        </div>
+
+        <button id="start-game-btn" class="button-primary">Start Game</button>
+    </div>
+
+    <script>
+        // Global variables for game state
+        let gameStarted = false;
+        let currentStage = 0;
+        let watchId = null; // To store the ID of the geolocation watcher
+        const TARGET_RADIUS_METERS = 50; // How close player needs to be to trigger puzzle (adjust as needed)
+
+        // --- NEW: Fake Location Configuration ---
+        const useFakeLocation = true; // Set to true to use fake coordinates, false to use real GPS
+        let fakeCoords = { latitude: 51.0450, longitude: -114.0585 }; // Default fake location (Penguin Plunge)
+        // You can change fakeCoords dynamically in your browser's console for testing:
+        // For example, to move to African Savannah: fakeCoords = { latitude: 51.0435, longitude: -114.0550 };
+        // Then manually trigger a location update (e.g., by calling updateGameDisplay() or refreshing if not using watchPosition)
+        // Or, even better, if watchPosition is active, try to call handleGeolocationSuccess with the fake coords directly for simulation.
+        // For a simple way to test, set fakeCoords to the target of your currentStage, refresh the page, and start the game.
+        // --- END NEW ---
+
+        // Mock puzzle data (Replace with actual Calgary Zoo locations and puzzles!)
+        // To get coordinates: Use Google Maps, right-click on a location, and select "What's here?"
+        const puzzles = [
+            {
+                id: 0,
+                name: "Penguin Plunge",
+                coords: { latitude: 51.0450, longitude: -114.0585 }, // Placeholder: Near Penguin Plunge entrance
+                clue: "Your first clue lies where chilly waters meet waddling friends. Seek out the most formal of aquatic birds.",
+                puzzle: "How many species of penguins can you see in this exhibit?",
+                answer: "4", // Example: Gentoo, King, Humboldt, Rockhopper (check actual zoo)
+                hint: "Head towards the Penguin Plunge exhibit."
+            },
+            {
+                id: 1,
+                name: "African Savannah",
+                coords: { latitude: 51.0435, longitude: -114.0550 }, // Placeholder: Near African Savannah
+                clue: "Venture to the land of wide plains and towering necks. A striped equine awaits your keen observation.",
+                puzzle: "What is the common name of the largest African hoofed mammal found here?",
+                answer: "Giraffe",
+                hint: "Go to the African Savannah area."
+            },
+            {
+                id: 2,
+                name: "Prehistoric Park",
+                coords: { latitude: 51.0460, longitude: -114.0530 }, // Placeholder: Near Dinosaur Park entrance
+                clue: "Travel back in time to an era of giants. Find the roar that echoes from millions of years ago.",
+                puzzle: "Which famous T-Rex relative's skeleton is on display near the entrance of this park?",
+                answer: "Gorgosaurus", // Check specific exhibit details
+                hint: "Make your way to the Prehistoric Park."
+            },
+            {
+                id: 3,
+                name: "Destination: The Exit!",
+                coords: { latitude: 51.0470, longitude: -114.0610 }, // Placeholder: Near the main exit
+                clue: "You've proven your wit and your navigational skills! The final challenge awaits near the main entrance/exit.",
+                puzzle: "What is the name of the river that flows alongside the Calgary Zoo?",
+                answer: "Bow River",
+                hint: "Head towards the main entrance/exit."
+            }
+        ];
+
+        // DOM elements
+        const introductionText = document.getElementById('introduction-text');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const gameDisplay = document.getElementById('game-display');
+        const clueText = document.getElementById('clue-text');
+        const locationHint = document.getElementById('location-hint');
+        const latitudeSpan = document.getElementById('latitude');
+        const longitudeSpan = document.getElementById('longitude');
+        const distanceSpan = document.getElementById('distance');
+        const puzzleSection = document.getElementById('puzzle-section');
+        const puzzleQuestion = document.getElementById('puzzle-question');
+        const answerInput = document.getElementById('answer-input');
+        const submitAnswerBtn = document.getElementById('submit-answer-btn');
+        const gameMessages = document.getElementById('game-messages');
+
+        /**
+         * Haversine formula to calculate distance between two lat/lon points.
+         * @param {Object} coords1 - {latitude, longitude}
+         * @param {Object} coords2 - {latitude, longitude}
+         * @returns {number} Distance in meters
+         */
+        function calculateDistance(coords1, coords2) {
+            const R = 6371e3; // metres
+            const φ1 = coords1.latitude * Math.PI / 180; // φ, λ in radians
+            const φ2 = coords2.latitude * Math.PI / 180;
+            const Δφ = (coords2.latitude - coords1.latitude) * Math.PI / 180;
+            const Δλ = (coords2.longitude - coords1.longitude) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            const d = R * c; // in metres
+            return d;
+        }
+
+        /**
+         * Displays a message to the user in the game messages area.
+         * @param {string} message - The message to display.
+         * @param {string} type - 'success', 'error', or 'info'. Determines styling.
+         */
+        function displayMessage(message, type = 'info') {
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = message;
+            messageDiv.className = `px-4 py-3 rounded relative mt-2 ${type === 'success' ? 'success-message' : type === 'error' ? 'error-message' : 'message-box'}`;
+            gameMessages.appendChild(messageDiv);
+            // Auto-remove message after 5 seconds
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+
+        /**
+         * Updates the game display based on the current stage.
+         */
+        function updateGameDisplay() {
+            if (currentStage >= puzzles.length) {
+                // Game finished
+                clueText.textContent = "Congratulations! You've solved all the puzzles and escaped the Calgary Zoo!";
+                locationHint.textContent = "Enjoy your freedom!";
+                puzzleSection.classList.add('hidden');
+                submitAnswerBtn.classList.add('hidden');
+                displayMessage("Game Over! You win!", 'success');
+                if (watchId !== null) {
+                    // Only clear watchId if it was actually set by navigator.geolocation
+                    if (navigator.geolocation && !useFakeLocation) {
+                        navigator.geolocation.clearWatch(watchId); // Stop watching location
+                    }
+                }
+                return;
+            }
+
+            const currentPuzzle = puzzles[currentStage];
+            clueText.textContent = currentPuzzle.clue;
+            locationHint.textContent = `Hint: ${currentPuzzle.hint}`;
+            puzzleSection.classList.add('hidden'); // Hide puzzle until location is reached
+            answerInput.value = ''; // Clear previous answer
+            displayMessage(`New clue revealed! Head to "${currentPuzzle.name}".`, 'info');
+        }
+
+        /**
+         * Handles successful geolocation updates.
+         * @param {GeolocationPosition} position
+         */
+        function handleGeolocationSuccess(position) {
+            let latitude, longitude;
+
+            if (useFakeLocation) {
+                // Use fake coordinates if enabled
+                latitude = fakeCoords.latitude;
+                longitude = fakeCoords.longitude;
+            } else {
+                // Use real device coordinates
+                latitude = position.coords.latitude;
+                longitude = position.coords.longitude;
+            }
+
+            latitudeSpan.textContent = latitude.toFixed(6);
+            longitudeSpan.textContent = longitude.toFixed(6);
+
+            if (currentStage < puzzles.length) {
+                const targetCoords = puzzles[currentStage].coords;
+                const distance = calculateDistance({ latitude, longitude }, targetCoords);
+                distanceSpan.textContent = distance.toFixed(2);
+
+                if (distance <= TARGET_RADIUS_METERS && puzzleSection.classList.contains('hidden')) {
+                    // Player is at the location, reveal the puzzle
+                    puzzleSection.classList.remove('hidden');
+                    puzzleQuestion.textContent = puzzles[currentStage].puzzle;
+                    displayMessage(`You've reached "${puzzles[currentStage].name}"! Time to solve the puzzle.`, 'success');
+                } else if (distance > TARGET_RADIUS_METERS && !puzzleSection.classList.contains('hidden')) {
+                    // Player moved away from the location, hide puzzle
+                    puzzleSection.classList.add('hidden');
+                    displayMessage("You moved away from the location. Get back to the target area to see the puzzle!", 'error');
+                }
+            }
+        }
+
+        /**
+         * Handles geolocation errors.
+         * @param {GeolocationPositionError} error
+         */
+        function handleGeolocationError(error) {
+            console.error('Geolocation error:', error);
+            let errorMessage = "Geolocation error occurred. Please ensure location services are enabled.";
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    errorMessage = "Location access denied. Please enable location services for this site in your browser settings to play.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    errorMessage = "Location information is unavailable. Try again later.";
+                    break;
+                case error.TIMEOUT:
+                    errorMessage = "The request to get user location timed out.";
+                    break;
+            }
+            displayMessage(errorMessage, 'error');
+            latitudeSpan.textContent = 'Error';
+            longitudeSpan.textContent = 'Error';
+            distanceSpan.textContent = 'Error';
+        }
+
+        /**
+         * Starts the game and initializes geolocation tracking.
+         */
+        function startGame() {
+            if (gameStarted) return; // Prevent multiple starts
+
+            gameStarted = true;
+            introductionText.classList.add('hidden');
+            startGameBtn.classList.add('hidden');
+            gameDisplay.classList.remove('hidden');
+
+            if (useFakeLocation) {
+                // If using fake location, simulate the success callback immediately
+                displayMessage("Using fake location for testing.", 'info');
+                // Simulate a position object
+                const fakePosition = {
+                    coords: fakeCoords,
+                    timestamp: Date.now()
+                };
+                handleGeolocationSuccess(fakePosition); // Immediately call with fake coords
+                // For continuous testing with fake location, you might want to simulate updates
+                // setInterval(() => handleGeolocationSuccess(fakePosition), 3000); // Update every 3 seconds
+            } else if (navigator.geolocation) {
+                displayMessage("Attempting to get your current location...", 'info');
+                // Start watching the user's position
+                watchId = navigator.geolocation.watchPosition(
+                    handleGeolocationSuccess,
+                    handleGeolocationError,
+                    {
+                        enableHighAccuracy: true, // Use GPS if available
+                        maximumAge: 0,            // Don't use cached position
+                        timeout: 5000             // Wait 5 seconds for position
+                    }
+                );
+            } else {
+                displayMessage("Geolocation is not supported by your browser. You cannot play this game.", 'error');
+            }
+
+            updateGameDisplay(); // Display the first clue
+        }
+
+        /**
+         * Checks the user's answer for the current puzzle.
+         */
+        function checkAnswer() {
+            if (currentStage >= puzzles.length) return; // Game already finished
+
+            const userAnswer = answerInput.value.trim().toLowerCase();
+            const correctAnswer = puzzles[currentStage].answer.toLowerCase();
+
+            if (userAnswer === correctAnswer) {
+                displayMessage("Correct! Well done!", 'success');
+                currentStage++; // Move to the next stage
+                
+                // If using fake location, immediately update the fake location to the next puzzle's target
+                if (useFakeLocation && currentStage < puzzles.length) {
+                    fakeCoords = puzzles[currentStage].coords;
+                    // Trigger a simulated location update to show the new distance/puzzle
+                    const fakePosition = {
+                        coords: fakeCoords,
+                        timestamp: Date.now()
+                    };
+                    handleGeolocationSuccess(fakePosition);
+                }
+                
+                updateGameDisplay(); // Update display with new clue or game end message
+            } else {
+                displayMessage("Incorrect answer. Try again!", 'error');
+            }
+        }
+
+        // Event Listeners
+        startGameBtn.addEventListener('click', startGame);
+        submitAnswerBtn.addEventListener('click', checkAnswer);
+
+        // Allow pressing Enter to submit answer
+        answerInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                checkAnswer();
+            }
+        });
+
+        // Initialize game on window load (optional, but good for consistent behavior)
+        window.onload = () => {
+            // No need to call startGame here, as user needs to click button.
+            // This just ensures all DOM elements are loaded before JS runs.
+        };
+
+    </script>
+</body>
+</html>
