@@ -91,7 +91,7 @@
         let gameStarted = false;
         let currentStage = 0;
         let watchId = null; // To store the ID of the geolocation watcher
-        const TARGET_RADIUS_METERS = 100; // How close player needs to be to trigger puzzle (adjust as needed)
+        const TARGET_RADIUS_METERS = 50; // How close player needs to be to trigger puzzle (adjust as needed)
 
         // --- Fake Location Configuration ---
         const useFakeLocation = true; // Set to true to use fake coordinates, false to use real GPS
@@ -220,6 +220,7 @@
             const currentPuzzle = puzzles[currentStage];
             clueText.textContent = currentPuzzle.clue;
             locationHint.textContent = `Hint: ${currentPuzzle.hint}`;
+            puzzleQuestion.textContent = currentPuzzle.puzzle; // Ensure puzzle question is set
             puzzleSection.classList.add('hidden'); // Hide puzzle until location is reached
             answerInput.value = ''; // Clear previous answer
             displayMessage(`New clue revealed! Head to "${currentPuzzle.name}".`, 'info');
@@ -255,7 +256,8 @@
                     // Player is at the location, reveal the puzzle if it's hidden
                     if (puzzleSection.classList.contains('hidden')) {
                         puzzleSection.classList.remove('hidden');
-                        puzzleQuestion.textContent = puzzles[currentStage].puzzle;
+                        // puzzleQuestion.textContent is now set in updateGameDisplay(),
+                        // so we just need to reveal the section.
                         displayMessage(`You've reached "${puzzles[currentStage].name}"! Time to solve the puzzle.`, 'success');
                     }
                 } else {
@@ -346,11 +348,14 @@
                 displayMessage("Correct! Well done!", 'success');
                 currentStage++; // Move to the next stage
                 
+                // Update display immediately for the new clue/stage
+                updateGameDisplay(); 
+
                 // If using fake location, immediately update the fake location to the next puzzle's target
                 if (useFakeLocation && currentStage < puzzles.length) {
                     fakeCoords = puzzles[currentStage].coords;
                     // Trigger a simulated location update to show the new distance/puzzle
-                    // Added a small delay to ensure DOM update (hiding puzzle) from updateGameDisplay() is processed
+                    // Keep a small delay to ensure DOM updates are processed before re-evaluating proximity
                     setTimeout(() => {
                         const fakePosition = {
                             coords: fakeCoords,
@@ -358,9 +363,15 @@
                         };
                         handleGeolocationSuccess(fakePosition);
                     }, 50); // 50ms delay
+                } else if (useFakeLocation && currentStage >= puzzles.length) {
+                    // If game finished and using fake location, ensure final state is handled
+                    const fakePosition = {
+                        coords: fakeCoords, // Keep at last known fake location or final puzzle location
+                        timestamp: Date.now()
+                    };
+                    handleGeolocationSuccess(fakePosition); // Trigger one last time to ensure game end logic runs
                 }
-                
-                updateGameDisplay(); // Update display with new clue or game end message
+
             } else {
                 displayMessage("Incorrect answer. Try again!", 'error');
             }
